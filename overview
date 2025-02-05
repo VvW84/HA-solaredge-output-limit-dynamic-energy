@@ -1,0 +1,88 @@
+IVM dynamisch energiecontract en het toekomstige einde van de salderingsregeling de volgende automatisering gemaakt.
+
+2 grenswaarde schakelaars aangemaakt
+1. Totale stroomprijs onder €0
+2. Kale stroomprijs onder €0
+
+In configuration YAML de volgende items aangemaakt
+ 
+sensor:
+  - platform: template
+    sensors:
+      current_energy_used_by_house:
+        friendly_name: "current_energy_used_by_house"
+        unique_id: current_energy_used_by_house
+        unit_of_measurement: "W"
+        value_template: >-
+          {% set supply_grid = states('sensor.p1_meter_active_power') | float %}
+          {% set supply_solar = states('sensor.solaredge_ac_power') | float %}
+          {{ (supply_grid + supply_solar)| round(0, default=0) }}	  
+      solar_usage_setpoint:
+        friendly_name: "solar_usage_setpoint"
+        unique_id: solar_usage_setpoint
+        unit_of_measurement: "%"
+        value_template: >-
+          {% set e_usage = states('sensor.current_energy_used_by_house') | float %}
+          {{ (e_usage / 35)| round(2, default=0) }}
+  - platform: average
+    name: 'Gemiddelde_solar_setpoint'
+    unique_id: Gemiddelde_solar_setpoint
+    duration: 5
+    entities:
+     - sensor.solar_usage_setpoint
+	 
+Hierbij de volgende automatisering gemaakt:
+
+alias: Zonnepanelen vermogen instellen
+description: ""
+mode: single
+triggers:
+  - seconds: "1"
+    trigger: time_pattern
+  - trigger: state
+    entity_id:
+      - sensor.gemiddelde_solar_setpoint
+    from: null
+    to: null
+conditions: []
+actions:
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: binary_sensor.stroomprijs_eur0
+            state: "on"
+        sequence:
+          - action: number.set_value
+            metadata: {}
+            data:
+              value: "0"
+            target:
+              entity_id: number.solaredge_active_power_limit
+        alias: Totale stroomprijs <€0
+      - conditions:
+          - condition: state
+            entity_id: binary_sensor.stroomprijs_eur0
+            state: "off"
+          - condition: state
+            entity_id: binary_sensor.kale_stroomprijs_eur0
+            state: "on"
+        sequence:
+          - action: number.set_value
+            metadata: {}
+            data:
+              value: "{{ states('sensor.gemiddelde_solar_setpoint')|float }}"
+            target:
+              entity_id: number.solaredge_active_power_limit
+        alias: Kale stroomprijs <€0 en totale stroomprijs >€0
+      - conditions:
+          - condition: state
+            entity_id: binary_sensor.kale_stroomprijs_eur0
+            state: "off"
+        sequence:
+          - action: number.set_value
+            metadata: {}
+            data:
+              value: 100
+            target:
+              entity_id: number.solaredge_active_power_limit
+        alias: Kale stroomprijs >€0
